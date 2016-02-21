@@ -19,7 +19,7 @@ let counter = 0;
 
 const filename = path.join('db-data', 'people');
 const db = new NeDB({ filename, autoload: true });
-const nedbService = service({ Model: db }).extend({
+const mixin = {
   _find(params) {
     params.query = params.query || {};
     if(!params.query.$sort) {
@@ -33,17 +33,20 @@ const nedbService = service({ Model: db }).extend({
     data.counter = ++counter;
     return this._super(data, params);
   }
-});
-const app = feathers().use('/people', nedbService);
+};
+
+const app = feathers()
+  .use('/people',  service({ Model: db }).extend(mixin))
+  .use('/people2', service({ Model: db, id: 'name' }).extend(mixin));
+
 const people = app.service('people');
+const people2 = app.service('people2');
 
 let _ids = {};
+let _ids2 = {};
 
 describe('NeDB Service', function() {
   var clean = done => fs.unlink(filename, () => done());
-
-  before(clean);
-  after(clean);
 
   describe('Initialization', () => {
     describe('when missing options', () => {
@@ -72,27 +75,59 @@ describe('NeDB Service', function() {
   });
 
   describe('Common functionality', () => {
-    beforeEach(function(done) {
-      db.insert({
-        name: 'Doug',
-        age: 32
-      }, function(error, data) {
-        if(error) {
-          return done(error);
-        }
+    describe('with default id field', () => {
+      before(clean);
+      after(clean);
 
-        _ids.Doug = data._id;
-        done();
+      beforeEach(function(done) {
+        db.insert({
+          name: 'Doug',
+          age: 32
+        }, function(error, data) {
+          if(error) {
+            return done(error);
+          }
+
+          _ids.Doug = data._id;
+          done();
+        });
       });
+
+      afterEach(done => db.remove({ _id: _ids.Doug }, () => done()));
+
+      it('is CommonJS compatible', () => {
+        assert.ok(typeof require('../lib') === 'function');
+      });
+
+      base(people, _ids, errors, '_id');
     });
 
-    afterEach(done => db.remove({ _id: _ids.Doug }, () => done()));
+    describe('with custom id field', () => {
+      before(clean);
+      after(clean);
+      
+      beforeEach(function(done) {
+        db.insert({
+          name: 'Doug',
+          age: 32
+        }, function(error, data) {
+          if(error) {
+            return done(error);
+          }
 
-    it('is CommonJS compatible', () => {
-      assert.ok(typeof require('../lib') === 'function');
+          _ids2.Doug = data.name;
+          done();
+        });
+      });
+
+      afterEach(done => db.remove({ name: _ids2.Doug }, () => done()));
+
+      it('is CommonJS compatible', () => {
+        assert.ok(typeof require('../lib') === 'function');
+      });
+
+      base(people2, _ids2, errors, 'name');
     });
-
-    base(people, _ids, errors, '_id');
   });
 });
 
